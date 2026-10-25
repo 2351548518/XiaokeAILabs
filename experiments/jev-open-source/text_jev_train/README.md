@@ -4,6 +4,13 @@
 
 模型代码来自 `malevrigns/agent-jev`（Apache-2.0），这里只保留训练必需的部分：底座用 Qwen3-0.6B，约 1.5 GB；数据集是 HuggingFace 上的 `LocalLLaMA/typed-decisions`，两个 parquet 加起来不到 0.8 MB。
 
+## 源码阅读
+
+[源码导读](docs/README.md) 以 `scripts/train.py` 为主线，分四篇说明实际数据到张量、
+本地 Qwen3 与候选头、训练选优校准测评、`jev_service` 输入和推理服务。
+示例使用 `prepared/` 中的真实案例、本地 tokenizer 和已完成 checkpoint 的 CPU 前向结果，
+并明确区分当前配置与已完成运行的配置快照。
+
 ## 目录结构
 
 ```
@@ -61,7 +68,7 @@ python scripts/train.py \
   --run-dir runs/agentjev_v1
 ```
 
-全参微调，不是 LoRA。600 步，骨干学习率 1e-5、候选头 1e-4，bf16。每 100 步在 dev 上评一次，按未校准的软交叉熵选 checkpoint。选完才用独立的校准划分拟合每类问题的温度，最后才读 test。顺序由代码固定，test 不会提前泄漏到选型里。
+全参微调，不是 LoRA。600 步，骨干学习率 1e-5、候选头 1e-4，bf16。初始化、每 100 步和最后一步在 dev 上评估，按未校准的软交叉熵选 checkpoint。初始化权重也会保存为 `best.pt`，后续没有更优结果时仍能完成校准和测试。选完才用独立的校准划分拟合每类问题的温度，最后才读 test。顺序由代码固定，test 不会提前泄漏到选型里。
 
 在 GB10（DGX Spark，128 GB 统一内存）上实测：全程约 49 分钟，峰值显存约 34 GB，test 2000 题准确率 78.05%。这两个数字给出的是量级，换机器按自己实测的每步耗时折算。
 

@@ -1,0 +1,112 @@
+Date: 2026-10-25
+Scope: local source/data inspection and offline CPU FP32 inference on two training questions.
+This is a concise inspection summary, not a new training or generalization benchmark.
+No optimizer step, data download, HTTP serving or shared-prefix parity benchmark was run.
+
+Source model directory: models/Qwen3-0.6B-Base
+Download script repository: Qwen/Qwen3-0.6B
+Download script revision: main
+config.json SHA256: 660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd
+tokenizer.json SHA256: aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4
+Tokenizer class: Qwen2Tokenizer
+pad_token_id: 151643
+eos_token_id: 151645
+hidden_size: 1024
+num_hidden_layers: 28
+num_attention_heads: 16
+num_key_value_heads: 8
+head_dim: 128
+intermediate_size: 3072
+vocab_size: 151936
+Loaded AgentJev parameters: 598418689
+Loaded backbone parameters: 596049920
+Decision head parameters: 2368769
+Source safetensors: 311 BF16 tensors, 751632384 stored elements including lm_head.weight.
+
+Prepared question counts (choice, boolean, score):
+train: 4800 (1440, 1440, 1920)
+dev: 600 (180, 180, 240)
+calibration: 600 (180, 180, 240)
+test: 2000 (600, 600, 800)
+Candidate counts observed across prepared splits: 2, 4, 5
+
+Example case: tr_agent_trace_observability_000212
+action path lengths: [105, 107, 109, 104]; common_prefix: 98
+needs_review path lengths: [100, 99]; common_prefix: 93
+outcome path lengths: [103, 108, 107, 102]; common_prefix: 97
+risk path lengths: [108, 105, 108, 112]; common_prefix: 98
+urgency path lengths: [103, 103, 105, 104]; common_prefix: 95
+Full example request: 5 questions, 18 paths, 1892 non-padding tokens, max length 112.
+First path first 20 token IDs: [58, 24628, 60, 5212, 8092, 22317, 2717, 16974, 3252, 69134, 291, 2198, 2528, 3252, 10481, 41935, 8273, 19, 58640, 65312]
+
+CPU forward source checkpoint: runs/agentjev_v1/best.pt
+Checkpoint step: 600
+Checkpoint protocol seed: 20260921
+Current protocol seed at inspection: 42
+Checkpoint microbatch_questions: 1
+Checkpoint gradient_accumulation: 16
+CPU inputs: first two prepared training questions, eval mode, inference_mode, FP32.
+input_ids / attention_mask shape: [6, 109]
+cand_mask / target shape: [2, 4]
+q_index: [0, 0, 0, 0, 1, 1]
+cand_index: [0, 1, 2, 3, 0, 1]
+cand_end_pos: [104, 106, 108, 103, 99, 98]
+Candidate vector shape: [2, 4, 1024]
+
+action target: [0.073333, 0.57, 0.296667, 0.06]
+action logits: [-1.365080714225769, 0.47188183665275574, -0.2267150729894638, -1.6895041465759277]
+action uncalibrated probabilities: [0.08991150557994843, 0.5644142031669617, 0.2806733250617981, 0.065000981092453]
+action soft CE: 1.0436108112335205
+action Brier sum: 0.0005868555745109916
+action loss (soft CE + 0.1 * Brier): 1.0436694622039795
+needs_review target: [0.666667, 0.333333]
+needs_review logits: [-0.011271322146058083, -0.6852142214775085]
+needs_review uncalibrated probabilities: [0.6623854637145996, 0.3376145362854004]
+needs_review soft CE: 0.6365549564361572
+needs_review Brier sum: 3.66630956705194e-05
+needs_review loss: 0.6365586519241333
+Two-question mean loss: 0.8401140570640564
+
+Expected load notices: unused lm_head.weight; nested-tensor optimization disabled by norm_first.
+Boundary: CPU numbers may differ from CUDA BF16; these are training samples, not held-out predictions.
+
+Validation: execute the complete CPU example embedded in chapter 02.
+step: 600 seed: 20260921
+tr_agent_trace_observability_000212:action [0.08991149067878723, 0.5644142031669617, 0.2806733548641205, 0.065000981092453]
+tr_agent_trace_observability_000212:needs_review [0.6623854637145996, 0.337614506483078]
+PASS: documented CPU probabilities and input/output shapes reproduced.
+
+Validation: exact prepared-record and encode_paths documentation comparison.
+PASS: raw parquet convert() matches the saved request and all five saved question records.
+PASS: documented request fragment, normalized question, full record and question_rows match saved data.
+PASS: all four documented token arrays and single-question locations exactly match encode_paths().
+Single question: 4 paths, lengths [105, 107, 109, 104], 1 question row.
+PASS: whole-request locations match; 18 paths, 5 question rows.
+PASS: no prepared files or model weights were modified.
+
+Validation: execute actual train.tokenize/batch functions with tensor allocations redirected to CPU.
+PASS: actual code produced all seven documented fields and expected dtypes/shapes.
+input_ids shape [6, 109] dtype torch.int64
+attention_mask shape [6, 109] dtype torch.int64
+cand_mask shape [2, 4] dtype torch.bool
+target shape [2, 4] dtype torch.float32
+q_index shape [6] dtype torch.int64
+cand_index shape [6] dtype torch.int64
+cand_end_pos shape [6] dtype torch.int64
+PASS: per-path token IDs, padding, attention lengths and question/candidate ownership checked.
+PASS: metadata scatter restores six path vectors to two independent candidate sets.
+Boundary: CPU tensor-packing inspection only; symbolic vectors used for the scatter check; no model training or GPU allocation.
+
+Validation: six actual candidate paths versus the 2x4 target/mask layout.
+PASS: target[q_index, cand_index] recovers all six teacher probabilities in path order.
+PASS: six valid cells plus two padding cells; padding cells have no corresponding path.
+Grouped target: [[0.0733330026268959, 0.5699999928474426, 0.2966670095920563, 0.05999999865889549], [0.6666669845581055, 0.33333298563957214, 0.0, 0.0]]
+Grouped cand_mask: [[True, True, True, True], [True, True, False, False]]
+
+Validation: recompute the four loss lines from the recorded actual CPU logits.
+Masked logp: [[-2.4089293479919434, -0.5719668865203857, -1.2705638408660889, -2.7333528995513916], [-0.4119076132774353, -1.085850477218628, 0.0, 0.0]]
+Probabilities: [[0.08991150557994843, 0.5644142031669617, 0.2806733250617981, 0.065000981092453], [0.6623854637145996, 0.3376145362854004, 0.0, 0.0]]
+Per-question CE: [1.0436108112335205, 0.6365549564361572]
+Mean CE: 0.8400828838348389
+Mean CE + 0.1 * Brier: 0.8401140570640564
+PASS: per-question normalization, zero padding probabilities, CE and mixed loss match the documented values.

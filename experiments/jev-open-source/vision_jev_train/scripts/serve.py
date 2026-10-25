@@ -6,8 +6,6 @@
 刻意只用标准库和 transformers，不加 Web 框架，减少读者的环境负担。
 """
 import argparse
-import base64
-import io
 import json
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -16,15 +14,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-PLACE = "<|vision_start|><|image_pad|><|vision_end|>"
-MAX_LEN = 320
-MAX_PIXELS = 320 * 320
+from calibration import probabilities, load_temperature
+from inputs import encode_batch, model_inputs
 
 
 def build_engine(ckpt, model, temperature):
     import torch
-    import torch.nn.functional as F
-    from PIL import Image
     from transformers import AutoProcessor, Qwen3_5ForSequenceClassification
 
     proc = AutoProcessor.from_pretrained(ckpt)
@@ -44,32 +39,17 @@ def build_engine(ckpt, model, temperature):
     net = PeftModel.from_pretrained(base, ckpt)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     net.to(device).eval()
-    return proc, tok, net, device, temperature, torch, F, Image
+    return proc, tok, net, device, temperature, torch
 
 
 def decide(engine, payload):
-    proc, tok, net, device, temperature, torch, F, Image = engine
-    image = Image.open(io.BytesIO(base64.b64decode(payload["image_png_b64"]))).convert("RGB")
-    # 与 train.py 同因：不能对含图像占位符的串启用 truncation
-    state = (payload.get("state") or "")[-MAX_LEN * 4:]
-    texts = [
-        f"{PLACE}State:\n{state}\n\nQuestion:\n"
-        f"{payload['question']}\n\nOption:\n{o}"
-        for o in payload["options"]
-    ]
-    enc = proc(
-        text=texts,
-        images=[image] * len(texts),
-        return_tensors="pt",
-        padding=True,
-        max_pixels=MAX_PIXELS,
-    )
-    keep = ["input_ids", "attention_mask", "pixel_values", "image_grid_thw", "mm_token_type_ids"]
-    enc = {k: enc[k] for k in keep if k in enc}
+    proc, tok, net, device, temperature, torch = engine
+    enc, _ = encode_batch(proc, [payload])
+    enc = model_inputs(enc)
     enc = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in enc.items()}
     with torch.no_grad():
-        logits = net(**enc).logits.float().squeeze(-1) / max(temperature, 1e-6)
-    probs = F.softmax(logits, dim=-1).cpu().tolist()
+        logits = net(**enc).logits.float().squeeze(-1)
+    probs = probabilities(logits, temperature).cpu().tolist()
     best = max(range(len(probs)), key=lambda i: probs[i])
     return {
         "options": payload["options"],
@@ -86,15 +66,10 @@ def main():
     ap.add_argument("--model", required=True, help="底座本地路径，如 models/Qwen3.5-2B")
     ap.add_argument("--port", type=int, default=8010)
     ap.add_argument("--temperature", type=float, default=None)
+    ap.add_argument("--temperatures", help="Calibration JSON exported by evaluate.py")
     args = ap.parse_args()
 
-    temp = args.temperature
-    if temp is None:
-        tp = Path(args.ckpt).parent / "temperatures.json"
-        if tp.exists():
-            temp = json.loads(tp.read_text())["temperature"]
-        else:
-            temp = 1.0
+    temp = load_temperature(args.ckpt, args.temperature, args.temperatures)
 
     engine = build_engine(args.ckpt, args.model, temp)
     print(f"[serve] ckpt={args.ckpt} T={temp} port={args.port}", flush=True)

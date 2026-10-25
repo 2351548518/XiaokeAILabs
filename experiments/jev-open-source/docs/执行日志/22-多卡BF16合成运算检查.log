@@ -1,0 +1,10 @@
+Synthetic BF16 matmul/backward check; no distributed communication or full training.
+PyTorch: 2.10.0+cu128 CUDA: 12.8
+[PASS] cuda:0: NVIDIA GeForce RTX 4090 BF16 matmul and backward
+[PASS] cuda:1: NVIDIA GeForce RTX 4090 BF16 matmul and backward
+[PASS] cuda:2: NVIDIA GeForce RTX 4090 BF16 matmul and backward
+[PASS] cuda:3: NVIDIA GeForce RTX 4090 BF16 matmul and backward
+[PASS] cuda:4: NVIDIA GeForce RTX 4090 BF16 matmul and backward
+[PASS] cuda:5: NVIDIA GeForce RTX 4090 BF16 matmul and backward
+[PASS] cuda:6: NVIDIA GeForce RTX 4090 BF16 matmul and backward
+[PASS] cuda:7: NVIDIA GeForce RTX 4090 BF16 matmul and backward

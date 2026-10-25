@@ -110,8 +110,8 @@ class PathEncoder(nn.Module):
         h = hs[torch.arange(P, device=hs.device), pos]  # [P, H]
         Bq, Cmax = batch["cand_mask"].shape
         cand_vecs = hs.new_zeros(Bq, Cmax, hs.size(-1))
-        cand_vecs[batch["q_index"], batch["cand_index"]] = h
-        return cand_vecs
+        cand_vecs[batch["q_index"], batch["cand_index"]] = h # NOTE 非常 重要，这一部分要好好理解
+        return cand_vecs # `[2,4,1024]` [问题数， 每个问题下候选数， hidden_size]
 
 
 class TreeEncoder(nn.Module):

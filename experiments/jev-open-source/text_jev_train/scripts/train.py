@@ -8,6 +8,9 @@
 calibration 划分拟合每类问题的温度，最后才第一次读 test。run 目录已
 存在且含 selection.json 时直接报错，防止重跑覆盖，换个目录即可。
 """
+import os
+# 设置 CUDA_VISIBLE_DEVICES 环境变量，指定使用的 GPU 设备
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import argparse
 import json
 import math
@@ -21,9 +24,6 @@ sys.path.insert(0, str(ROOT))
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
-from transformers import AutoTokenizer  # noqa: E402
-
-from agentjev.model import AgentJevModel  # noqa: E402
 from jev_service.contract import encode_paths  # noqa: E402
 
 
@@ -31,7 +31,26 @@ def save(path, value):
     path = Path(path)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 把写好的临时文件移动到目标路径；如果目标文件已存在，就覆盖它。成功后，report.tmp 消失，report.json 保存新内容。
+    # 这样做的好处： 写临时文件时如果失败，原来的 report.json 通常仍保持完整。临时文件与目标文件位于同一目录，最后的替换通常具有原子性，读者看到的是旧文件或完整的新文件。
     tmp.replace(path)
+
+
+def save_checkpoint(model, run_dir, step, protocol):
+    """Atomically save every eligible winner, including the initialization."""
+    tmp = run_dir / "best.tmp"
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "step": step,
+            "role": "typed_decisions",
+            "input_schema": "agentjev.decision.v1",
+            "max_path_tokens": 2048,
+            "protocol": protocol,
+        },
+        tmp,
+    )
+    tmp.replace(run_dir / "best.pt")
 
 
 def load(split, prepared_dir):
@@ -59,8 +78,10 @@ def batch(rows, pad):
     cmax = max(len(r["target"]) for r in rows)
     ids = torch.full((len(paths), length), pad, dtype=torch.long, device="cuda:0")
     att = torch.zeros_like(ids)
+
     mask = torch.zeros(len(rows), cmax, dtype=torch.bool, device="cuda:0")
     targets = torch.zeros(len(rows), cmax, device="cuda:0")
+    
     qi, ci, ends = [], [], []
     p = 0
     for i, r in enumerate(rows):
@@ -107,13 +128,13 @@ def metrics(rows):
     ece = 0.0
     for lo in np.arange(0, 1, 0.1):
         ix = [
-            i
-            for i, c in enumerate(confidence)
-            if lo <= c < (lo + 0.1 if lo < 0.9 else 1.0000001)
+            i for i, c in enumerate(confidence) if lo <= c < (lo + 0.1 if lo < 0.9 else 1.0000001)
         ]
         if ix:
-            ece += len(ix) / len(rows) * abs(
-                np.mean([correct[i] for i in ix]) - np.mean([confidence[i] for i in ix])
+            ece += (
+                len(ix)
+                / len(rows)
+                * abs(np.mean([correct[i] for i in ix]) - np.mean([confidence[i] for i in ix]))
             )
     return {
         "n": len(rows),
@@ -141,7 +162,7 @@ def report(rows):
 
 
 def evaluate(model, rows, pad):
-    model.eval()
+    model.eval() # 将模型切换到评估模式，禁用 dropout 等训练特定的操作，以确保评估结果的稳定性和一致性。
     predictions = []
     for start in range(0, len(rows), 8):
         chunk = rows[start : start + 8]
@@ -188,11 +209,15 @@ def apply_calibration(rows, temperatures):
 
 
 def main():
+    from transformers import AutoTokenizer
+    from agentjev.model import AgentJevModel
+
+    #  参数 设置
     parser = argparse.ArgumentParser()
     parser.add_argument("--backbone", required=True, help="本地底座目录（Qwen3-0.6B）")
-    parser.add_argument("--protocol", default=str(ROOT / "scripts" / "protocol.json"))
-    parser.add_argument("--prepared", default=str(ROOT / "prepared"))
-    parser.add_argument("--run-dir", default=str(ROOT / "runs" / "agentjev_v1"))
+    parser.add_argument("--protocol", default=str(ROOT / "scripts" / "protocol.json")) # 训练的 参数 设置
+    parser.add_argument("--prepared", default=str(ROOT / "prepared")) # 训练数据
+    parser.add_argument("--run-dir", default=str(ROOT / "runs" / "agentjev_v1_2026_1025_2000")) # 训练结果保存目录
     args = parser.parse_args()
 
     protocol = json.loads(Path(args.protocol).read_text())
@@ -201,12 +226,17 @@ def main():
     if (run_dir / "selection.json").exists():
         raise RuntimeError("selection.json 已存在，换一个 --run-dir 再跑")
 
+    # 设置随机种子和线程数
     torch.manual_seed(protocol["seed"])
     rng = random.Random(protocol["seed"])
     torch.set_num_threads(4)
+
+    # 加载 tokenizer 和 padding_id
     tok = AutoTokenizer.from_pretrained(args.backbone, local_files_only=True)
     pad = tok.pad_token_id or tok.eos_token_id
 
+
+    # 数据集
     prepared_dir = Path(args.prepared)
     train_rows = tokenize(load("train", prepared_dir), tok)
     dev_rows = tokenize(load("dev", prepared_dir), tok)
@@ -224,10 +254,17 @@ def main():
     )
 
     model = AgentJevModel(args.backbone).to("cuda:0")
+
+
     torch.cuda.reset_peak_memory_stats()
-    base = evaluate(model, dev_rows, pad)
+    base = evaluate(model, dev_rows, pad) 
     best_ce = metrics(base)["soft_cross_entropy"]
+    if not math.isfinite(best_ce):
+        raise RuntimeError("nonfinite initial development loss")
     best_step = 0
+    # Step zero participates in selection. Persist it before training mutates
+    # the model so an unimproved run still has a valid winner to calibrate.
+    save_checkpoint(model, run_dir, best_step, protocol)
     save(run_dir / "initial_dev.json", report(base))
     print("initial_dev", json.dumps(metrics(base)), flush=True)
 
@@ -288,26 +325,14 @@ def main():
             opt.step()
             schedule.step()
             rec = {"step": step, "loss": total_loss, "seconds": round(time.monotonic() - start, 2)}
-            if step % 100 == 0:
+            if step % 100 == 0 or step == steps:
                 pred = evaluate(model, dev_rows, pad)
                 m = metrics(pred)
                 rec["dev"] = m
                 if m["soft_cross_entropy"] < best_ce:
                     best_ce = m["soft_cross_entropy"]
                     best_step = step
-                    tmp = run_dir / "best.tmp"
-                    torch.save(
-                        {
-                            "state_dict": model.state_dict(),
-                            "step": step,
-                            "role": "typed_decisions",
-                            "input_schema": "agentjev.decision.v1",
-                            "max_path_tokens": 2048,
-                            "protocol": protocol,
-                        },
-                        tmp,
-                    )
-                    tmp.replace(run_dir / "best.pt")
+                    save_checkpoint(model, run_dir, step, protocol)
                 save(run_dir / f"dev_step_{step}.json", report(pred))
             events.write(json.dumps(rec) + "\n")
             if step % 20 == 0:
@@ -317,7 +342,7 @@ def main():
     selection = {
         "best_step": best_step,
         "dev_soft_cross_entropy": best_ce,
-        "checkpoint": str(run_dir / "best.pt") if best_step else None,
+        "checkpoint": str(run_dir / "best.pt"),
         "selection_completed_before_test": True,
         "training_seconds": time.monotonic() - start,
         "peak_cuda_memory_gb": round(torch.cuda.max_memory_allocated() / 1e9, 3),

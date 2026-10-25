@@ -35,6 +35,16 @@ def main():
         allow_patterns=[f"*{args.split}*"],
         local_dir=str(dest),
     )
+    # snapshot_download preserves upstream subdirectories. Normalize the chosen
+    # single shard to the path accepted by the documented prepare command.
+    import shutil
+
+    sources = [f for f in dest.rglob("*.parquet") if f.name.startswith(args.split + "-")]
+    expected = dest / f"{args.split}-00000-of-00001.parquet"
+    if not expected.exists():
+        if len(sources) != 1:
+            raise RuntimeError("Expected one split shard; pass its path to prepare_data.py")
+        shutil.move(str(sources[0]), expected)
     print(f"[done] {p}")
     for f in sorted(dest.rglob("*.parquet")):
         print(f"[file] {f} {f.stat().st_size / 2**20:.1f}MB")

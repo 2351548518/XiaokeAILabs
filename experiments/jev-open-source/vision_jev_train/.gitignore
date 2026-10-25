@@ -1,7 +1,7 @@
 # 数据、底座、训练产物不入库
-data/all/*.parquet
+data/
 models/
 prepared/
-runs/*/
+runs/
 __pycache__/
 *.pyc

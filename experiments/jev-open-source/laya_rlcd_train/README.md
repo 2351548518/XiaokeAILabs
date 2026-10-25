@@ -32,9 +32,9 @@ Kaggle 免费 2xT4 DDP）。本实验把它改成单卡 CUDA 路径（无 DDP）
 |---|---|
 | 硬件 | NVIDIA DGX Spark（GB10 Grace Blackwell，121 GB 统一内存，aarch64） |
 | 系统 | Ubuntu 24.04 LTS |
-| Python | 3.12（venv `~/laya-rlcd-env`） |
+| Python | 3.12，独立虚拟环境 |
 | torch | 2.14.0+cu130（aarch64 CUDA 13 wheel） |
-| laya | 0.4.1（仓库 main，tarball 落位 `~/laya-main`） |
+| laya | 0.4.1（历史实测使用仓库 main 的 tarball） |
 
 ## 文件
 
@@ -60,3 +60,16 @@ Jev 官方 0.727 与教师上限 0.735，官方 2xT4 的 0.766 落在两次实�
 上游：laya 仓库 `github.com/NandhaKishorM/laya`（Apache-2.0），数据集
 `huggingface.co/datasets/LocalLLaMA/typed-decisions`，权重
 `huggingface.co/convaiinnovations/laya`。
+
+## A/B 脚本运行约定
+
+在训练机或私有工作副本中准备独立环境，安装提供 `laya.train.finetune` 的 Laya 版本及 datasets、huggingface_hub、CUDA 版 torch，再执行：
+
+```bash
+python scripts/prepare_data.py --out-dir data
+bash scripts/run_ab_compare.sh
+```
+
+脚本默认使用已激活环境的 `python`，可以通过 `JEV_PYTHON` 指定解释器。启动前检查训练接口、CUDA 和两份数据文件，不依赖仓外的 preflight 脚本。
+
+两臂串行运行；任一臂失败就停止，终端输出同时留在 `docs/执行日志/rlcd.log`、`soft-ce.log`，汇总写入 `ab-summary.log`。已有结果不会覆盖；重跑需指定新的 `JEV_RUN_ROOT` 与 `JEV_LOG_DIR`。数据路径可通过 `JEV_TRAIN_DATA`、`JEV_EVAL_DATA` 覆盖。大日志按仓库规则提取摘要后发布。

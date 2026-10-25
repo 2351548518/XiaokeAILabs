@@ -1,0 +1,27 @@
+Switching to .venv/bin/python
+Environment: .venv; Python 3.12.13
+[PASS] torch>=2.0.0: 2.14.1; version and import OK
+[PASS] transformers>=4.40.0: 5.20.2; version and import OK
+[PASS] numpy>=1.24.0: 2.5.4; version and import OK
+[PASS] pyarrow>=14.0.0: 26.0.0; version and import OK
+[PASS] huggingface_hub>=0.24.0: 2.2.0; version and import OK
+[PASS] requests>=2.28.0: 2.34.2; version and import OK
+[PASS] text_jev_train/requirements.txt: requirements file processed
+[PASS] Text training API imports: AutoTokenizer, Qwen3Config, Qwen3Model
+Physical GPUs / driver (indices may differ from logical CUDA indices):
+0, NVIDIA GeForce RTX 4090, 570.86.15
+1, NVIDIA GeForce RTX 4090, 570.86.15
+2, NVIDIA GeForce RTX 4090, 570.86.15
+3, NVIDIA GeForce RTX 4090, 570.86.15
+4, NVIDIA GeForce RTX 4090, 570.86.15
+5, NVIDIA GeForce RTX 4090, 570.86.15
+6, NVIDIA GeForce RTX 4090, 570.86.15
+7, NVIDIA GeForce RTX 4090, 570.86.15
+PyTorch: 2.14.1+cu130; bundled CUDA: 13.0
+CUDA_VISIBLE_DEVICES: <unset>
+[WARN] CUDA initialization: The NVIDIA driver on your system is too old (found version 12080). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver. (Triggered internally at /__w/pytorch/pytorch/c10/cuda/CUDAFunctions.cpp:119.)
+[FAIL] CUDA runtime and selected GPU: RuntimeError: CUDA initialization failed; check driver and GPU visibility
+[SKIP] GPU computations: CUDA unavailable or invalid device
+
+Result: 8 passed, 1 failed
+NOT READY: fix the failed checks before running text training.

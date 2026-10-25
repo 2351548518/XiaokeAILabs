@@ -1,0 +1,4 @@
+# Route PyTorch packages to the official CUDA 12.8 index when using uv pip.
+# Other dependencies continue to use the normal Python package index.
+[pip]
+torch-backend = "cu128"

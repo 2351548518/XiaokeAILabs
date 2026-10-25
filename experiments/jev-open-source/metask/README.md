@@ -17,6 +17,7 @@
 
 ```bash
 bash metask/metask-install.sh
+source ~/metask-jev/.venv/bin/activate
 python metask/metask-bench.py
 ```
 
@@ -24,7 +25,7 @@ python metask/metask-bench.py
 
 ## 实测指标与数据说明
 
-在本机测试环境下的实测数据：
+以下是旧题集的历史实测数据，当前脚本已统一使用 Laya 题集，需要重测，不能将旧数字作为修正后版本的验收目标：
 
 - **端到端延迟**：单次分类判定的中位数 133.5 ms（英文）与 133.7 ms（中文）。
 - **业务准确率**：英文工单 20 条命中 19 条；中文工单 20 条全对。
@@ -32,3 +33,5 @@ python metask/metask-bench.py
 
 **关于上游基准数据**：
 上游 README 列出的 ECE 校准误差（0.114 降至 0.040）与 JevBench 排名我们没有复现，排名也是上游自测插值，未经过官方评测。选型时以本仓实测数字为准，完整取舍说明见《实验报告.md》。
+
+当前分类题集与类别描述由实验根目录的 `benchmark_cases.py` 统一提供，日志打印版本 `ticket-classification-v2`。温度配置从脚本同目录的 `metask-temperature.json` 读取，不依赖启动目录；缺少配置会报错，不会静默回退到未校准概率。

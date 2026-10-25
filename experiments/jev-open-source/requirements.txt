@@ -1,0 +1,14 @@
+# Text training profile: Linux x86_64, Python 3.12, CUDA 12.8.
+# Install with: uv pip install --python .venv/bin/python -r requirements.txt
+# uv.toml selects the official CUDA wheel source; keep the +cu128 pin so a
+# CPU build or a newer, driver-incompatible CUDA build cannot replace it.
+-r text_jev_train/requirements.txt
+
+torch==2.10.0+cu128
+transformers==5.20.2
+numpy==2.5.4
+pyarrow==26.0.0
+huggingface_hub==2.2.0
+requests==2.34.2
+# Used explicitly by test_env.py to validate requirement specifiers.
+packaging==26.3

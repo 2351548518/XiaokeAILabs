@@ -6,38 +6,58 @@
 #
 # 用法（laya-rlcd-env，实验目录下）：
 #   bash scripts/run_ab_compare.sh
-# 产物：runs/rlcd/ 与 runs/softce/ 各自的 checkpoint + train_report.json，
+# 产物：runs/rlcd/ 与 runs/soft-ce/ 各自的 checkpoint + train_report.json，
 #       最后打印并排对比表。
-set -u
+set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HERE"
 export HF_HUB_DISABLE_XET=1
 
-PY=/home/ke/laya-rlcd-env/bin/python
-DATA=data/typed_decisions_train.jsonl
-EVAL=data/typed_decisions_test.jsonl
+JEV_PYTHON="${JEV_PYTHON:-python}"
+DATA="${JEV_TRAIN_DATA:-data/typed_decisions_train.jsonl}"
+EVAL="${JEV_EVAL_DATA:-data/typed_decisions_test.jsonl}"
+RUN_ROOT="${JEV_RUN_ROOT:-runs}"
+LOG_DIR="${JEV_LOG_DIR:-docs/执行日志}"
 
-bash ~/preflight.sh laya-ab-compare 50 || exit 1
+# Keep prerequisites portable: no private shell scripts or interpreter paths.
+# Check before creating outputs so a missing dependency cannot leave a fake run.
+"$JEV_PYTHON" -c 'from laya.train import TrainConfig, finetune; import torch; assert torch.cuda.is_available(), "CUDA is required"'
+for INPUT in "$DATA" "$EVAL"; do
+  [[ -f "$INPUT" ]] || { echo "Missing data: $INPUT" >&2; exit 1; }
+done
+for ARM in rlcd soft-ce; do
+  [[ ! -e "$RUN_ROOT/$ARM" && ! -e "$LOG_DIR/$ARM.log" ]] || {
+    echo "Existing results for $ARM; choose new JEV_RUN_ROOT and JEV_LOG_DIR" >&2; exit 1;
+  }
+done
+[[ ! -e "$LOG_DIR/ab-summary.log" ]] || {
+  echo "Existing summary; choose a new JEV_LOG_DIR" >&2; exit 1;
+}
+mkdir -p "$RUN_ROOT" "$LOG_DIR"
 
 for ARM in rlcd soft-ce; do
   LOSS="$ARM"
   echo "=== arm: $ARM (loss=$LOSS) ==="
-  $PY scripts/run_finetune.py \
+  "$JEV_PYTHON" scripts/run_finetune.py \
     --data "$DATA" --eval-data "$EVAL" \
-    --output-dir "runs/$ARM" \
+    --output-dir "$RUN_ROOT/$ARM" \
     --loss "$LOSS" --epochs 4 --seed 0 --device cuda \
-    > "runs/${ARM}.log" 2>&1 || { echo "arm $ARM FAILED, see runs/${ARM}.log"; exit 1; }
+    2>&1 | tee "$LOG_DIR/$ARM.log"
 done
 
 echo
 echo "=== A/B 对比（held-out 2000 题，唯一变量 loss）==="
-$PY - <<'EOF'
+"$JEV_PYTHON" - "$RUN_ROOT" <<'EOF' | tee "$LOG_DIR/ab-summary.log"
 import json
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
 
 def report(arm):
     # train_report.json 是扁平结构：eval_mode/before/after 在顶层，无 train_report 外层键
-    with open(f"runs/{arm}/train_report.json") as f:
+    with (root / arm / "train_report.json").open() as f:
         return json.load(f)
 
 r, s = report("rlcd"), report("soft-ce")
@@ -47,8 +67,10 @@ print(f"{'metric':<16}{'rlcd':>12}{'soft-ce':>12}{'delta':>12}")
 for k, name in keys:
     a, b = r["after"].get(k), s["after"].get(k)
     d = (a - b) if (a is not None and b is not None) else None
-    print(f"{name:<16}{a:>12.4f}{b:>12.4f}{d:>+12.4f}")
-print(f"{'loss (final ep)':<16}{r['after']['loss']:>12.4f}{s['after']['loss']:>12.4f}")
+    fmt = lambda value: "n/a" if value is None else f"{value:.4f}"
+    print(f"{name:<16}{fmt(a):>12}{fmt(b):>12}{fmt(d):>12}")
+# Evaluation loss is not necessarily the final epoch's training loss.
+print(f"{'eval loss':<16}{fmt(r['after'].get('loss')):>12}{fmt(s['after'].get('loss')):>12}")
 print("\nby type (accuracy):")
 for t in ("choice", "score", "noul"):
     ra = r["after"]["by_type"][t]["accuracy"]

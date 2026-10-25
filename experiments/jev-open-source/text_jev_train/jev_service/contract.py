@@ -72,7 +72,8 @@ def encode_paths(prepared, tokenizer, max_tokens=2048):
         state_ids = tokenizer.encode(state if state.startswith('[STATE]') else '[STATE] '+state, add_special_tokens=False)
         for question in request['questions']:
             prefix = state_ids + tokenizer.encode('\n[QUESTION] '+question['text'], add_special_tokens=False)
-            qindex = len(question_rows); question_rows.append(question)
+            qindex = len(question_rows)
+            question_rows.append(question)
             for cindex, candidate in enumerate(question['candidates']):
                 ids = prefix + tokenizer.encode('\n[CANDIDATE] '+candidate, add_special_tokens=False)
                 if len(ids) > max_tokens:
