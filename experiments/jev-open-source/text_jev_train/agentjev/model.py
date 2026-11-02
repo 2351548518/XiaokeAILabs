@@ -178,7 +178,7 @@ class AgentJevModel(nn.Module):
         x = self.proj_in(cand_vecs)
         x = x * cand_mask.unsqueeze(-1).to(x.dtype)
         enc = self.set_encoder(x, cand_mask)
-        rep = cand_vecs + self.proj_out(enc)
+        rep = cand_vecs + self.proj_out(enc) # 恢复维度 后 与原候选向量残差相加
         logits = self.scorer(rep)  # [Bq, Cmax]
         return logits.masked_fill(~cand_mask, -1e4)
 
